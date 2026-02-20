@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-<title>Crypto Discipline Trainer</title>
+<title>Advanced Crypto Discipline Trainer</title>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chartjs-chart-financial"></script>
@@ -9,58 +9,40 @@
 <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-luxon"></script>
 
 <style>
-body {
-  background:#0f0f0f;
-  color:#eee;
-  font-family:Arial;
-  max-width:1100px;
-  margin:auto;
-  padding:20px;
-}
-input, button, textarea {
-  width:100%;
-  margin:5px 0;
-  padding:8px;
-  background:#111;
-  color:#eee;
-  border:1px solid #333;
-}
+body { background:#0f0f0f; color:#eee; font-family:Arial; max-width:1200px; margin:auto; padding:20px;}
+input, button, textarea { width:100%; margin:5px 0; padding:8px; background:#111; color:#eee; border:1px solid #333;}
 button { cursor:pointer; }
-.box { border:1px solid #333; padding:15px; margin-top:15px; }
+.box { border:1px solid #333; padding:15px; margin-top:15px;}
 </style>
 </head>
 <body>
 
-<h1>Crypto Trading Discipline Trainer</h1>
+<h1>Advanced Crypto Discipline Trainer</h1>
 
 <div class="box">
 Balance: $<span id="balance"></span><br>
 Position: <span id="position">None</span><br>
-Trades Today: <span id="tradeCount">0</span><br>
-Daily P/L: <span id="dailyPL">0</span><br>
-Win Rate: <span id="winrate">0%</span><br>
-Total R: <span id="totalR">0</span>
+Trades Today: <span id="tradeCount"></span><br>
+Daily P/L: <span id="dailyPL"></span><br>
+Win Rate: <span id="winrate"></span><br>
+Total R: <span id="totalR"></span>
 </div>
 
 <div class="box">
-Risk % per Trade:
+Risk %:
 <input id="risk" type="number" value="1">
-
-Stop Loss %:
+Stop %:
 <input id="stopPercent" type="number" value="2">
-
-Take Profit %:
+TP %:
 <input id="tpPercent" type="number" value="4">
-
-Max Trades per Day:
+Max Trades:
 <input id="maxTrades" type="number" value="3">
-
-Daily Loss Limit %:
+Daily Loss %:
 <input id="dailyLoss" type="number" value="3">
-
 <button onclick="lockRules()">Lock Rules</button>
-<button onclick="buy()">Buy</button>
-<button onclick="sell()">Close Trade</button>
+<button onclick="openTrade('long')">Go Long</button>
+<button onclick="openTrade('short')">Go Short</button>
+<button onclick="closeTrade()">Close Trade</button>
 </div>
 
 <div class="box" id="journalBox" style="display:none;">
@@ -80,211 +62,208 @@ Daily Loss Limit %:
 
 <script>
 
-// ====== STATE ======
+// ===== STATE =====
 let balance = 10000;
 let startOfDay = 10000;
-let position = null;
 let tradesToday = 0;
 let wins = 0;
 let losses = 0;
 let totalR = 0;
-let equityHistory = [balance];
+let position = null;
 let journalRequired = false;
 let rulesLocked = false;
 let dailyLocked = false;
+let equityHistory = [balance];
 
 let price = 100;
 
-// ====== SAVE / LOAD ======
-function saveData() {
-  localStorage.setItem("trainerData", JSON.stringify({
-    balance, wins, losses, totalR, equityHistory
-  }));
+// ===== SAVE / LOAD =====
+function saveData(){
+localStorage.setItem("trainerData", JSON.stringify({
+balance,wins,losses,totalR,equityHistory
+}));
 }
-
-function loadData() {
-  let data = JSON.parse(localStorage.getItem("trainerData"));
-  if (data) {
-    balance = data.balance;
-    wins = data.wins;
-    losses = data.losses;
-    totalR = data.totalR;
-    equityHistory = data.equityHistory;
-  }
+function loadData(){
+let d = JSON.parse(localStorage.getItem("trainerData"));
+if(d){ balance=d.balance; wins=d.wins; losses=d.losses; totalR=d.totalR; equityHistory=d.equityHistory;}
 }
 loadData();
 
-// ====== CANDLE SYSTEM ======
-let candles = [];
-let currentCandle = null;
-let candleInterval = 5000;
+// ===== CANDLE SYSTEM =====
+let candles=[];
+let currentCandle=null;
+let candleInterval=5000;
 
-function updatePrice() {
-  let volatility = Math.random() < 0.5 ? 2 : 8;
-  let move = (Math.random() - 0.5) * volatility;
-  let newPrice = Math.max(1, price + move);
+function updatePrice(){
+let vol=Math.random()<0.5?2:8;
+let move=(Math.random()-0.5)*vol;
+let newPrice=Math.max(1,price+move);
 
-  if (!currentCandle) {
-    currentCandle = {
-      x: Date.now(),
-      o: price,
-      h: newPrice,
-      l: newPrice,
-      c: newPrice
-    };
-  } else {
-    currentCandle.h = Math.max(currentCandle.h, newPrice);
-    currentCandle.l = Math.min(currentCandle.l, newPrice);
-    currentCandle.c = newPrice;
-  }
-
-  price = newPrice;
-
-  if (position) {
-    if (price <= position.stop || price >= position.tp) {
-      closeTrade();
-    }
-  }
-
-  priceChart.update();
+if(!currentCandle){
+currentCandle={x:Date.now(),o:price,h:newPrice,l:newPrice,c:newPrice};
+}else{
+currentCandle.h=Math.max(currentCandle.h,newPrice);
+currentCandle.l=Math.min(currentCandle.l,newPrice);
+currentCandle.c=newPrice;
 }
 
-setInterval(updatePrice, 1000);
+price=newPrice;
 
-setInterval(() => {
-  if (currentCandle) {
-    candles.push(currentCandle);
-    if (candles.length > 100) candles.shift();
-    currentCandle = null;
-    priceChart.update();
-  }
-}, candleInterval);
-
-// ====== TRADING LOGIC ======
-function lockRules() {
-  rulesLocked = true;
+if(position){
+if(position.type==="long"){
+if(price<=position.stop||price>=position.tp) closeTrade();
+}else{
+if(price>=position.stop||price<=position.tp) closeTrade();
+}
 }
 
-function buy() {
-  if (!rulesLocked || journalRequired || position || dailyLocked) return;
+priceChart.update();
+}
+setInterval(updatePrice,1000);
 
-  let riskPercent = parseFloat(document.getElementById("risk").value);
-  let stopPercent = parseFloat(document.getElementById("stopPercent").value);
-  let tpPercent = parseFloat(document.getElementById("tpPercent").value);
-  let maxTrades = parseInt(document.getElementById("maxTrades").value);
+setInterval(()=>{
+if(currentCandle){
+candles.push(currentCandle);
+if(candles.length>120) candles.shift();
+currentCandle=null;
+priceChart.update();
+}
+},candleInterval);
 
-  if (tradesToday >= maxTrades) return alert("Max trades reached.");
+// ===== TRADING =====
+function lockRules(){ rulesLocked=true; }
 
-  let riskAmount = balance * (riskPercent / 100);
-  let stopPrice = price * (1 - stopPercent / 100);
-  let tpPrice = price * (1 + tpPercent / 100);
-  let size = riskAmount / (price - stopPrice);
+function openTrade(type){
+if(!rulesLocked||journalRequired||position||dailyLocked) return;
 
-  position = { entry: price, size, stop: stopPrice, tp: tpPrice, riskAmount };
+let riskPercent=parseFloat(document.getElementById("risk").value);
+let stopPercent=parseFloat(document.getElementById("stopPercent").value);
+let tpPercent=parseFloat(document.getElementById("tpPercent").value);
+let maxTrades=parseInt(document.getElementById("maxTrades").value);
 
-  tradesToday++;
-  updateUI();
+if(tradesToday>=maxTrades) return alert("Max trades reached");
+
+let riskAmount=balance*(riskPercent/100);
+let stopPrice,tpPrice;
+
+if(type==="long"){
+stopPrice=price*(1-stopPercent/100);
+tpPrice=price*(1+tpPercent/100);
+}else{
+stopPrice=price*(1+stopPercent/100);
+tpPrice=price*(1-tpPercent/100);
 }
 
-function closeTrade() {
-  if (!position) return;
+let size=riskAmount/Math.abs(price-stopPrice);
 
-  let pnl = (price - position.entry) * position.size;
-  balance += pnl;
-
-  let R = pnl / position.riskAmount;
-  totalR += R;
-
-  if (pnl > 0) wins++;
-  else losses++;
-
-  equityHistory.push(balance);
-  equityChart.data.labels.push(equityHistory.length);
-  equityChart.data.datasets[0].data = equityHistory;
-  equityChart.update();
-
-  let dailyLossLimit = parseFloat(document.getElementById("dailyLoss").value);
-  let dailyDrawdown = ((startOfDay - balance) / startOfDay) * 100;
-  if (dailyDrawdown >= dailyLossLimit) {
-    dailyLocked = true;
-    alert("Daily loss limit hit. Trading locked.");
-  }
-
-  position = null;
-  journalRequired = true;
-  document.getElementById("journalBox").style.display = "block";
-
-  saveData();
-  updateUI();
+position={type,entry:price,size,stop:stopPrice,tp:tpPrice,riskAmount};
+tradesToday++;
+drawTradeLines();
+updateUI();
 }
 
-function sell() {
-  closeTrade();
+function closeTrade(){
+if(!position) return;
+
+let pnl;
+
+if(position.type==="long"){
+pnl=(price-position.entry)*position.size;
+}else{
+pnl=(position.entry-price)*position.size;
 }
 
-function submitJournal() {
-  if (!document.getElementById("reason").value) return;
-  journalRequired = false;
-  document.getElementById("journalBox").style.display = "none";
-  document.getElementById("reason").value = "";
-  document.getElementById("emotion").value = "";
+balance+=pnl;
+
+let R=pnl/position.riskAmount;
+totalR+=R;
+
+if(pnl>0) wins++; else losses++;
+
+equityHistory.push(balance);
+equityChart.data.labels.push(equityHistory.length);
+equityChart.data.datasets[0].data=equityHistory;
+equityChart.update();
+
+let dailyLossLimit=parseFloat(document.getElementById("dailyLoss").value);
+let drawdown=((startOfDay-balance)/startOfDay)*100;
+if(drawdown>=dailyLossLimit){
+dailyLocked=true;
+alert("Daily loss limit hit.");
 }
 
-function updateUI() {
-  document.getElementById("balance").innerText = balance.toFixed(2);
-  document.getElementById("position").innerText = position ? "Open" : "None";
-  document.getElementById("tradeCount").innerText = tradesToday;
-  document.getElementById("dailyPL").innerText = (balance - startOfDay).toFixed(2);
-  document.getElementById("winrate").innerText =
-    (wins + losses === 0 ? 0 : ((wins / (wins + losses)) * 100).toFixed(1)) + "%";
-  document.getElementById("totalR").innerText = totalR.toFixed(2);
+position=null;
+clearTradeLines();
+journalRequired=true;
+document.getElementById("journalBox").style.display="block";
+saveData();
+updateUI();
+}
+
+function submitJournal(){
+if(!document.getElementById("reason").value) return;
+journalRequired=false;
+document.getElementById("journalBox").style.display="none";
+document.getElementById("reason").value="";
+document.getElementById("emotion").value="";
+}
+
+function updateUI(){
+document.getElementById("balance").innerText=balance.toFixed(2);
+document.getElementById("position").innerText=position?position.type:"None";
+document.getElementById("tradeCount").innerText=tradesToday;
+document.getElementById("dailyPL").innerText=(balance-startOfDay).toFixed(2);
+document.getElementById("winrate").innerText=
+(wins+losses===0?0:((wins/(wins+losses))*100).toFixed(1))+"%";
+document.getElementById("totalR").innerText=totalR.toFixed(2);
 }
 updateUI();
 
-// ====== CHARTS ======
-const priceCtx = document.getElementById("priceChart").getContext("2d");
+// ===== CHARTS =====
+const priceCtx=document.getElementById("priceChart").getContext("2d");
 
-const priceChart = new Chart(priceCtx, {
-  type: 'candlestick',
-  data: {
-    datasets: [{
-      label: 'Price',
-      data: candles
-    }]
-  },
-  options: {
-    scales: {
-      x: {
-        type: 'time',
-        time: { unit: 'second' },
-        ticks: { color: '#eee' }
-      },
-      y: {
-        ticks: { color: '#eee' }
-      }
-    }
-  }
+let tradeLines=[];
+
+function drawTradeLines(){
+tradeLines=[
+{type:'line',yMin:position.entry,yMax:position.entry,borderColor:'white',borderWidth:1},
+{type:'line',yMin:position.stop,yMax:position.stop,borderColor:'red',borderWidth:1},
+{type:'line',yMin:position.tp,yMax:position.tp,borderColor:'green',borderWidth:1}
+];
+priceChart.options.plugins.annotation={annotations:tradeLines};
+priceChart.update();
+}
+
+function clearTradeLines(){
+priceChart.options.plugins.annotation={annotations:[]};
+priceChart.update();
+}
+
+const priceChart=new Chart(priceCtx,{
+type:'candlestick',
+data:{datasets:[{label:'Price',data:candles}]},
+options:{
+scales:{
+x:{type:'time',time:{unit:'second'},ticks:{color:'#eee'}},
+y:{ticks:{color:'#eee'}}
+}
+}
 });
 
-const equityCtx = document.getElementById("equityChart").getContext("2d");
+const equityCtx=document.getElementById("equityChart").getContext("2d");
 
-const equityChart = new Chart(equityCtx, {
-  type: 'line',
-  data: {
-    labels: equityHistory.map((_, i) => i),
-    datasets: [{
-      label: "Equity Curve",
-      data: equityHistory,
-      borderColor: "lime",
-      fill: false
-    }]
-  },
-  options: {
-    scales: {
-      x: { display:false },
-      y: { ticks: { color: '#eee' } }
-    }
-  }
+const equityChart=new Chart(equityCtx,{
+type:'line',
+data:{
+labels:equityHistory.map((_,i)=>i),
+datasets:[{label:'Equity Curve',data:equityHistory,borderColor:'lime',fill:false}]
+},
+options:{
+scales:{
+x:{display:false},
+y:{ticks:{color:'#eee'}}
+}
+}
 });
 
 </script>
