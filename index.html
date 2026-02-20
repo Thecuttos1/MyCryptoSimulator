@@ -1,272 +1,219 @@
-<index.html>
-
+<!DOCTYPE html>
 <html>
-
 <head>
-
-  <title>Crypto Discipline Simulator</title>
-
-  <style>
-
-    body {
-
-      font-family: Arial;
-
-      background: #0f0f0f;
-
-      color: #eee;
-
-      padding: 20px;
-
-      max-width: 800px;
-
-      margin: auto;
-
-    }
-
-    button {
-
-      padding: 10px;
-
-      margin: 5px;
-
-      background: #222;
-
-      color: #eee;
-
-      border: 1px solid #444;
-
-      cursor: pointer;
-
-    }
-
-    button:disabled {
-
-      opacity: 0.4;
-
-      cursor: not-allowed;
-
-    }
-
-    input, textarea {
-
-      width: 100%;
-
-      margin: 5px 0;
-
-      padding: 8px;
-
-      background: #111;
-
-      color: #eee;
-
-      border: 1px solid #444;
-
-    }
-
-    .box {
-
-      border: 1px solid #333;
-
-      padding: 15px;
-
-      margin-top: 15px;
-
-    }
-
-  </style>
-
+<title>Crypto Discipline Trainer</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<style>
+body {
+  background:#0f0f0f;
+  color:#eee;
+  font-family:Arial;
+  max-width:900px;
+  margin:auto;
+  padding:20px;
+}
+input, button, textarea {
+  width:100%;
+  margin:5px 0;
+  padding:8px;
+  background:#111;
+  color:#eee;
+  border:1px solid #333;
+}
+button { cursor:pointer; }
+.box { border:1px solid #333; padding:15px; margin-top:15px; }
+.locked { opacity:0.5; pointer-events:none; }
+</style>
 </head>
-
 <body>
 
-
-
-<h1>Crypto Trading Discipline Simulator</h1>
-
-
+<h1>Crypto Trading Discipline Trainer</h1>
 
 <div class="box">
-
-  <p>Balance: $<span id="balance">10000</span></p>
-
-  <p>Price: $<span id="price">100</span></p>
-
-  <p>Position: <span id="position">None</span></p>
-
+Balance: $<span id="balance"></span><br>
+Price: $<span id="price"></span><br>
+Position: <span id="position">None</span><br>
+Daily P/L: <span id="dailyPL">0</span><br>
+Trades Today: <span id="tradeCount">0</span><br>
+Win Rate: <span id="winrate">0%</span><br>
+Total R: <span id="totalR">0</span>
 </div>
-
-
 
 <div class="box">
-
-  <h3>Rules</h3>
-
-  Max Risk % per Trade:
-
-  <input id="risk" type="number" value="1">
-
-  Max Trades Today:
-
-  <input id="maxTrades" type="number" value="3">
-
-  <button onclick="setRules()">Lock Rules</button>
-
+Risk % per Trade:
+<input id="risk" type="number" value="1">
+Max Trades per Day:
+<input id="maxTrades" type="number" value="3">
+Daily Loss Limit %:
+<input id="dailyLoss" type="number" value="3">
+<button onclick="lockRules()">Lock Rules</button>
 </div>
 
-
-
-<div class="box">
-
-  <button id="buyBtn" onclick="buy()">Buy</button>
-
-  <button id="sellBtn" onclick="sell()">Sell</button>
-
+<div class="box" id="tradeBox">
+Stop Loss %:
+<input id="stopPercent" type="number" value="2">
+Take Profit %:
+<input id="tpPercent" type="number" value="4">
+<button onclick="buy()">Buy</button>
+<button onclick="sell()">Close</button>
 </div>
-
-
 
 <div class="box" id="journalBox" style="display:none;">
-
-  <h3>Trade Journal (Required)</h3>
-
-  Why did you take this trade?
-
-  <textarea id="reason"></textarea>
-
-  Emotion:
-
-  <input id="emotion">
-
-  <button onclick="submitJournal()">Submit Journal</button>
-
+<h3>Trade Journal (Required)</h3>
+<textarea id="reason" placeholder="Why did you take this trade?"></textarea>
+<input id="emotion" placeholder="Emotion during trade">
+<button onclick="submitJournal()">Submit</button>
 </div>
 
-
+<div class="box">
+<canvas id="equityChart"></canvas>
+</div>
 
 <script>
-
 let balance = 10000;
-
+let startOfDay = 10000;
 let price = 100;
-
 let position = null;
-
 let tradesToday = 0;
-
-let rulesLocked = false;
-
+let wins = 0;
+let losses = 0;
+let totalR = 0;
+let equityHistory = [balance];
 let journalRequired = false;
+let rulesLocked = false;
+let dailyLocked = false;
 
-let maxTrades = 0;
+function saveData() {
+  localStorage.setItem("trainerData", JSON.stringify({
+    balance, wins, losses, totalR, equityHistory
+  }));
+}
 
-let riskPercent = 0;
-
-
+function loadData() {
+  let data = JSON.parse(localStorage.getItem("trainerData"));
+  if (data) {
+    balance = data.balance;
+    wins = data.wins;
+    losses = data.losses;
+    totalR = data.totalR;
+    equityHistory = data.equityHistory;
+  }
+}
+loadData();
 
 function updatePrice() {
-
-  let move = (Math.random() - 0.5) * 4;
-
+  let volatility = Math.random() < 0.5 ? 2 : 8;
+  let move = (Math.random() - 0.5) * volatility;
   price = Math.max(1, price + move);
 
+  if (position) {
+    if (price <= position.stop || price >= position.tp) {
+      closeTrade();
+    }
+  }
+
   document.getElementById("price").innerText = price.toFixed(2);
-
 }
-
 setInterval(updatePrice, 1000);
 
-
-
-function setRules() {
-
-  riskPercent = parseFloat(document.getElementById("risk").value);
-
-  maxTrades = parseInt(document.getElementById("maxTrades").value);
-
+function lockRules() {
   rulesLocked = true;
-
-  alert("Rules locked. Trading enabled.");
-
 }
 
-
-
 function buy() {
+  if (!rulesLocked || journalRequired || position || dailyLocked) return;
 
-  if (!rulesLocked || journalRequired || position) return;
+  let riskPercent = parseFloat(document.getElementById("risk").value);
+  let stopPercent = parseFloat(document.getElementById("stopPercent").value);
+  let tpPercent = parseFloat(document.getElementById("tpPercent").value);
+  let maxTrades = parseInt(document.getElementById("maxTrades").value);
 
   if (tradesToday >= maxTrades) return alert("Max trades reached.");
 
-
-
   let riskAmount = balance * (riskPercent / 100);
+  let stopPrice = price * (1 - stopPercent / 100);
+  let tpPrice = price * (1 + tpPercent / 100);
+  let size = riskAmount / (price - stopPrice);
 
-  position = {
-
-    entry: price,
-
-    size: riskAmount / price
-
-  };
+  position = { entry: price, size, stop: stopPrice, tp: tpPrice, riskAmount };
 
   tradesToday++;
-
   updateUI();
-
 }
 
-
-
-function sell() {
-
+function closeTrade() {
   if (!position) return;
 
   let pnl = (price - position.entry) * position.size;
-
   balance += pnl;
 
+  let R = pnl / position.riskAmount;
+  totalR += R;
+
+  if (pnl > 0) wins++;
+  else losses++;
+
+  equityHistory.push(balance);
+  chart.update();
+
+  let dailyLossLimit = parseFloat(document.getElementById("dailyLoss").value);
+  let dailyDrawdown = ((startOfDay - balance) / startOfDay) * 100;
+  if (dailyDrawdown >= dailyLossLimit) {
+    dailyLocked = true;
+    alert("Daily loss limit hit. Trading locked.");
+  }
+
   position = null;
-
   journalRequired = true;
-
   document.getElementById("journalBox").style.display = "block";
-
+  saveData();
   updateUI();
-
 }
 
-
+function sell() {
+  closeTrade();
+}
 
 function submitJournal() {
-
   if (!document.getElementById("reason").value) return;
-
   journalRequired = false;
-
   document.getElementById("journalBox").style.display = "none";
-
   document.getElementById("reason").value = "";
-
   document.getElementById("emotion").value = "";
-
 }
-
-
 
 function updateUI() {
-
   document.getElementById("balance").innerText = balance.toFixed(2);
-
   document.getElementById("position").innerText = position ? "Open" : "None";
-
+  document.getElementById("tradeCount").innerText = tradesToday;
+  document.getElementById("winrate").innerText =
+    (wins + losses === 0 ? 0 : ((wins / (wins + losses)) * 100).toFixed(1)) + "%";
+  document.getElementById("totalR").innerText = totalR.toFixed(2);
+  document.getElementById("dailyPL").innerText =
+    (balance - startOfDay).toFixed(2);
 }
+updateUI();
 
+const ctx = document.getElementById("equityChart").getContext("2d");
+const chart = new Chart(ctx, {
+  type: "line",
+  data: {
+    labels: equityHistory.map((_, i) => i),
+    datasets: [{
+      label: "Equity Curve",
+      data: equityHistory,
+      borderColor: "lime",
+      fill: false
+    }]
+  },
+  options: {
+    scales: {
+      x: { display: false },
+      y: { ticks: { color: "#eee" } }
+    }
+  }
+});
 </script>
 
-
-
 </body>
-
-
 </html>
