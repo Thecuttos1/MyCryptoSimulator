@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+  <title>Crypto Discipline Simulator</title>
+
+  <style>
+
+    body {
+
+      font-family: Arial;
+
+      background: #0f0f0f;
+
+      color: #eee;
+
+      padding: 20px;
+
+      max-width: 800px;
+
+      margin: auto;
+
+    }
+
+    button {
+
+      padding: 10px;
+
+      margin: 5px;
+
+      background: #222;
+
+      color: #eee;
+
+      border: 1px solid #444;
+
+      cursor: pointer;
+
+    }
+
+    button:disabled {
+
+      opacity: 0.4;
+
+      cursor: not-allowed;
+
+    }
+
+    input, textarea {
+
+      width: 100%;
+
+      margin: 5px 0;
+
+      padding: 8px;
+
+      background: #111;
+
+      color: #eee;
+
+      border: 1px solid #444;
+
+    }
+
+    .box {
+
+      border: 1px solid #333;
+
+      padding: 15px;
+
+      margin-top: 15px;
+
+    }
+
+  </style>
+
+</head>
+
+<body>
+
+
+
+<h1>Crypto Trading Discipline Simulator</h1>
+
+
+
+<div class="box">
+
+  <p>Balance: $<span id="balance">10000</span></p>
+
+  <p>Price: $<span id="price">100</span></p>
+
+  <p>Position: <span id="position">None</span></p>
+
+</div>
+
+
+
+<div class="box">
+
+  <h3>Rules</h3>
+
+  Max Risk % per Trade:
+
+  <input id="risk" type="number" value="1">
+
+  Max Trades Today:
+
+  <input id="maxTrades" type="number" value="3">
+
+  <button onclick="setRules()">Lock Rules</button>
+
+</div>
+
+
+
+<div class="box">
+
+  <button id="buyBtn" onclick="buy()">Buy</button>
+
+  <button id="sellBtn" onclick="sell()">Sell</button>
+
+</div>
+
+
+
+<div class="box" id="journalBox" style="display:none;">
+
+  <h3>Trade Journal (Required)</h3>
+
+  Why did you take this trade?
+
+  <textarea id="reason"></textarea>
+
+  Emotion:
+
+  <input id="emotion">
+
+  <button onclick="submitJournal()">Submit Journal</button>
+
+</div>
+
+
+
+<script>
+
+let balance = 10000;
+
+let price = 100;
+
+let position = null;
+
+let tradesToday = 0;
+
+let rulesLocked = false;
+
+let journalRequired = false;
+
+let maxTrades = 0;
+
+let riskPercent = 0;
+
+
+
+function updatePrice() {
+
+  let move = (Math.random() - 0.5) * 4;
+
+  price = Math.max(1, price + move);
+
+  document.getElementById("price").innerText = price.toFixed(2);
+
+}
+
+setInterval(updatePrice, 1000);
+
+
+
+function setRules() {
+
+  riskPercent = parseFloat(document.getElementById("risk").value);
+
+  maxTrades = parseInt(document.getElementById("maxTrades").value);
+
+  rulesLocked = true;
+
+  alert("Rules locked. Trading enabled.");
+
+}
+
+
+
+function buy() {
+
+  if (!rulesLocked || journalRequired || position) return;
+
+  if (tradesToday >= maxTrades) return alert("Max trades reached.");
+
+
+
+  let riskAmount = balance * (riskPercent / 100);
+
+  position = {
+
+    entry: price,
+
+    size: riskAmount / price
+
+  };
+
+  tradesToday++;
+
+  updateUI();
+
+}
+
+
+
+function sell() {
+
+  if (!position) return;
+
+  let pnl = (price - position.entry) * position.size;
+
+  balance += pnl;
+
+  position = null;
+
+  journalRequired = true;
+
+  document.getElementById("journalBox").style.display = "block";
+
+  updateUI();
+
+}
+
+
+
+function submitJournal() {
+
+  if (!document.getElementById("reason").value) return;
+
+  journalRequired = false;
+
+  document.getElementById("journalBox").style.display = "none";
+
+  document.getElementById("reason").value = "";
+
+  document.getElementById("emotion").value = "";
+
+}
+
+
+
+function updateUI() {
+
+  document.getElementById("balance").innerText = balance.toFixed(2);
+
+  document.getElementById("position").innerText = position ? "Open" : "None";
+
+}
+
+</script>
+
+
+
+</body>
+
+</html>
