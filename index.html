@@ -2,13 +2,18 @@
 <html>
 <head>
 <title>Crypto Discipline Trainer</title>
+
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-chart-financial"></script>
+<script src="https://cdn.jsdelivr.net/npm/luxon"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-luxon"></script>
+
 <style>
 body {
   background:#0f0f0f;
   color:#eee;
   font-family:Arial;
-  max-width:900px;
+  max-width:1100px;
   margin:auto;
   padding:20px;
 }
@@ -22,7 +27,6 @@ input, button, textarea {
 }
 button { cursor:pointer; }
 .box { border:1px solid #333; padding:15px; margin-top:15px; }
-.locked { opacity:0.5; pointer-events:none; }
 </style>
 </head>
 <body>
@@ -31,10 +35,9 @@ button { cursor:pointer; }
 
 <div class="box">
 Balance: $<span id="balance"></span><br>
-Price: $<span id="price"></span><br>
 Position: <span id="position">None</span><br>
-Daily P/L: <span id="dailyPL">0</span><br>
 Trades Today: <span id="tradeCount">0</span><br>
+Daily P/L: <span id="dailyPL">0</span><br>
 Win Rate: <span id="winrate">0%</span><br>
 Total R: <span id="totalR">0</span>
 </div>
@@ -42,20 +45,22 @@ Total R: <span id="totalR">0</span>
 <div class="box">
 Risk % per Trade:
 <input id="risk" type="number" value="1">
-Max Trades per Day:
-<input id="maxTrades" type="number" value="3">
-Daily Loss Limit %:
-<input id="dailyLoss" type="number" value="3">
-<button onclick="lockRules()">Lock Rules</button>
-</div>
 
-<div class="box" id="tradeBox">
 Stop Loss %:
 <input id="stopPercent" type="number" value="2">
+
 Take Profit %:
 <input id="tpPercent" type="number" value="4">
+
+Max Trades per Day:
+<input id="maxTrades" type="number" value="3">
+
+Daily Loss Limit %:
+<input id="dailyLoss" type="number" value="3">
+
+<button onclick="lockRules()">Lock Rules</button>
 <button onclick="buy()">Buy</button>
-<button onclick="sell()">Close</button>
+<button onclick="sell()">Close Trade</button>
 </div>
 
 <div class="box" id="journalBox" style="display:none;">
@@ -66,13 +71,18 @@ Take Profit %:
 </div>
 
 <div class="box">
+<canvas id="priceChart"></canvas>
+</div>
+
+<div class="box">
 <canvas id="equityChart"></canvas>
 </div>
 
 <script>
+
+// ====== STATE ======
 let balance = 10000;
 let startOfDay = 10000;
-let price = 100;
 let position = null;
 let tradesToday = 0;
 let wins = 0;
@@ -83,6 +93,9 @@ let journalRequired = false;
 let rulesLocked = false;
 let dailyLocked = false;
 
+let price = 100;
+
+// ====== SAVE / LOAD ======
 function saveData() {
   localStorage.setItem("trainerData", JSON.stringify({
     balance, wins, losses, totalR, equityHistory
@@ -101,10 +114,31 @@ function loadData() {
 }
 loadData();
 
+// ====== CANDLE SYSTEM ======
+let candles = [];
+let currentCandle = null;
+let candleInterval = 5000;
+
 function updatePrice() {
   let volatility = Math.random() < 0.5 ? 2 : 8;
   let move = (Math.random() - 0.5) * volatility;
-  price = Math.max(1, price + move);
+  let newPrice = Math.max(1, price + move);
+
+  if (!currentCandle) {
+    currentCandle = {
+      x: Date.now(),
+      o: price,
+      h: newPrice,
+      l: newPrice,
+      c: newPrice
+    };
+  } else {
+    currentCandle.h = Math.max(currentCandle.h, newPrice);
+    currentCandle.l = Math.min(currentCandle.l, newPrice);
+    currentCandle.c = newPrice;
+  }
+
+  price = newPrice;
 
   if (position) {
     if (price <= position.stop || price >= position.tp) {
@@ -112,10 +146,21 @@ function updatePrice() {
     }
   }
 
-  document.getElementById("price").innerText = price.toFixed(2);
+  priceChart.update();
 }
+
 setInterval(updatePrice, 1000);
 
+setInterval(() => {
+  if (currentCandle) {
+    candles.push(currentCandle);
+    if (candles.length > 100) candles.shift();
+    currentCandle = null;
+    priceChart.update();
+  }
+}, candleInterval);
+
+// ====== TRADING LOGIC ======
 function lockRules() {
   rulesLocked = true;
 }
@@ -154,7 +199,9 @@ function closeTrade() {
   else losses++;
 
   equityHistory.push(balance);
-  chart.update();
+  equityChart.data.labels.push(equityHistory.length);
+  equityChart.data.datasets[0].data = equityHistory;
+  equityChart.update();
 
   let dailyLossLimit = parseFloat(document.getElementById("dailyLoss").value);
   let dailyDrawdown = ((startOfDay - balance) / startOfDay) * 100;
@@ -166,6 +213,7 @@ function closeTrade() {
   position = null;
   journalRequired = true;
   document.getElementById("journalBox").style.display = "block";
+
   saveData();
   updateUI();
 }
@@ -186,17 +234,42 @@ function updateUI() {
   document.getElementById("balance").innerText = balance.toFixed(2);
   document.getElementById("position").innerText = position ? "Open" : "None";
   document.getElementById("tradeCount").innerText = tradesToday;
+  document.getElementById("dailyPL").innerText = (balance - startOfDay).toFixed(2);
   document.getElementById("winrate").innerText =
     (wins + losses === 0 ? 0 : ((wins / (wins + losses)) * 100).toFixed(1)) + "%";
   document.getElementById("totalR").innerText = totalR.toFixed(2);
-  document.getElementById("dailyPL").innerText =
-    (balance - startOfDay).toFixed(2);
 }
 updateUI();
 
-const ctx = document.getElementById("equityChart").getContext("2d");
-const chart = new Chart(ctx, {
-  type: "line",
+// ====== CHARTS ======
+const priceCtx = document.getElementById("priceChart").getContext("2d");
+
+const priceChart = new Chart(priceCtx, {
+  type: 'candlestick',
+  data: {
+    datasets: [{
+      label: 'Price',
+      data: candles
+    }]
+  },
+  options: {
+    scales: {
+      x: {
+        type: 'time',
+        time: { unit: 'second' },
+        ticks: { color: '#eee' }
+      },
+      y: {
+        ticks: { color: '#eee' }
+      }
+    }
+  }
+});
+
+const equityCtx = document.getElementById("equityChart").getContext("2d");
+
+const equityChart = new Chart(equityCtx, {
+  type: 'line',
   data: {
     labels: equityHistory.map((_, i) => i),
     datasets: [{
@@ -208,12 +281,12 @@ const chart = new Chart(ctx, {
   },
   options: {
     scales: {
-      x: { display: false },
-      y: { ticks: { color: "#eee" } }
+      x: { display:false },
+      y: { ticks: { color: '#eee' } }
     }
   }
 });
-</script>
 
+</script>
 </body>
 </html>
